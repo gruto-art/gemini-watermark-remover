@@ -201,6 +201,11 @@
             box-shadow: 0 10px 30px rgba(139, 90, 43, 0.2);
         }
 
+        .stat.global-stat {
+            background: linear-gradient(135deg, rgba(139, 90, 43, 0.15), rgba(139, 90, 43, 0.05));
+            border-color: rgba(139, 90, 43, 0.3);
+        }
+
         .stat-value {
             font-size: 2.5em;
             font-weight: bold;
@@ -663,6 +668,10 @@
                 <div class="stat-value" id="avgTime">0ms</div>
                 <div class="stat-label" data-i18n="avgTime">זמן ממוצע</div>
             </div>
+            <div class="stat global-stat">
+                <div class="stat-value" id="globalCount">-</div>
+                <div class="stat-label" data-i18n="globalProcessed">🌍 עובדו בכלל</div>
+            </div>
         </div>
 
         <!-- Donate Button Above Drop Zone -->
@@ -778,6 +787,7 @@
                 totalImages: 'סה"כ תמונות',
                 processed: 'עובדו',
                 avgTime: 'זמן ממוצע',
+                globalProcessed: '🌍 עובדו בכלל',
                 dropHere: 'גרור תמונות לכאן',
                 orClick: 'או לחץ לבחירת קבצים',
                 supports: 'תומך ב: JPG, PNG, WebP',
@@ -804,6 +814,7 @@
                 totalImages: 'Total Images',
                 processed: 'Processed',
                 avgTime: 'Avg Time',
+                globalProcessed: '🌍 Total Processed',
                 dropHere: 'Drop Images Here',
                 orClick: 'or click to select files',
                 supports: 'Supports: JPG, PNG, WebP',
@@ -1089,6 +1100,11 @@
 
             console.log(`[Done] Processed: ${successCount} success, ${errorCount} errors`);
             console.log(`[Stats] Total processed ever: ${state.processed.length}`);
+
+            // Update global counter
+            if (successCount > 0) {
+                incrementGlobalCount(successCount);
+            }
         }
 
         async function downloadAll() {
@@ -1171,6 +1187,34 @@
         if (savedLang) {
             setLanguage(savedLang);
         }
+
+        // Global counter using CountAPI
+        const COUNTER_API = 'https://api.countapi.xyz';
+        const COUNTER_NAMESPACE = 'gruto-art-gemini-watermark';
+        const COUNTER_KEY = 'images-processed';
+
+        async function getGlobalCount() {
+            try {
+                const res = await fetch(`${COUNTER_API}/get/${COUNTER_NAMESPACE}/${COUNTER_KEY}`);
+                const data = await res.json();
+                document.getElementById('globalCount').textContent = (data.value || 0).toLocaleString();
+            } catch (e) {
+                console.log('Could not fetch global count');
+            }
+        }
+
+        async function incrementGlobalCount(count) {
+            try {
+                const res = await fetch(`${COUNTER_API}/hit/${COUNTER_NAMESPACE}/${COUNTER_KEY}?amount=${count}`);
+                const data = await res.json();
+                document.getElementById('globalCount').textContent = (data.value || 0).toLocaleString();
+            } catch (e) {
+                console.log('Could not update global count');
+            }
+        }
+
+        // Load global count on page load
+        getGlobalCount();
 
         // Load masks on startup
         Promise.all([loadAlphaMask(48), loadAlphaMask(96)])
