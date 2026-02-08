@@ -705,8 +705,6 @@
         <input type="file" id="folderInput" webkitdirectory multiple accept="image/*">
 
         <div class="controls">
-            <button id="processBtn" disabled data-i18n="processAll">עבד הכל</button>
-            <button id="downloadBtn" class="secondary" disabled data-i18n="downloadAll">הורד הכל (ZIP)</button>
             <button id="clearBtn" class="secondary" data-i18n="clearAll">נקה הכל</button>
         </div>
 
@@ -768,9 +766,6 @@
         </div>
     </div>
 
-    <!-- JSZip for downloading multiple files -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
     <script>
         // ============== I18N ==============
         const translations = {
@@ -786,8 +781,6 @@
                 donateHint: '5 ש"ח = אלפי טוקנים בקלוד 😋',
                 selectFiles: 'בחר קבצים',
                 selectFolder: 'בחר תיקייה',
-                processAll: 'עבד הכל',
-                downloadAll: 'הורד הכל (ZIP)',
                 clearAll: 'נקה הכל',
                 donateWithBit: 'תרום עם Bit',
                 creditOriginal: 'מבוסס על gemini-watermark-remover מאת journey-ad',
@@ -812,8 +805,6 @@
                 donateHint: '5₪ = thousands of Claude tokens 😋',
                 selectFiles: 'Select Files',
                 selectFolder: 'Select Folder',
-                processAll: 'Process All',
-                downloadAll: 'Download All (ZIP)',
                 clearAll: 'Clear All',
                 donateWithBit: 'Donate with Bit',
                 creditOriginal: 'Based on gemini-watermark-remover by journey-ad',
@@ -986,8 +977,6 @@
         const fileInput = document.getElementById('fileInput');
         const folderInput = document.getElementById('folderInput');
         const gallery = document.getElementById('gallery');
-        const processBtn = document.getElementById('processBtn');
-        const downloadBtn = document.getElementById('downloadBtn');
         const clearBtn = document.getElementById('clearBtn');
         const progressFill = document.getElementById('progressFill');
 
@@ -1021,8 +1010,6 @@
             e.target.value = '';
         });
 
-        processBtn.addEventListener('click', processAll);
-        downloadBtn.addEventListener('click', downloadAll);
         clearBtn.addEventListener('click', clearAll);
 
         function handleFiles(fileList) {
@@ -1040,12 +1027,15 @@
             });
             console.log(`[Total] ${state.files.length} images in queue`);
             updateUI();
+            // Auto-process and download immediately
+            if (newFiles.length > 0) {
+                processAll();
+            }
         }
 
         async function processAll() {
             if (state.processing) return;
             state.processing = true;
-            processBtn.disabled = true;
 
             const pending = state.files.filter(f => f.status === 'pending');
             let times = [];
@@ -1069,6 +1059,9 @@
                     state.processed.push(item);
                     successCount++;
                     console.log(`[Success] ${item.file.name} - ${result.time.toFixed(0)}ms`);
+
+                    // Auto-download immediately
+                    downloadSingleFile(item);
                 } catch (err) {
                     item.status = 'error';
                     item.error = err.message;
@@ -1081,8 +1074,6 @@
             }
 
             state.processing = false;
-            processBtn.disabled = false;
-            downloadBtn.disabled = state.processed.length === 0;
 
             if (times.length > 0) {
                 const avg = times.reduce((a, b) => a + b, 0) / times.length;
@@ -1094,19 +1085,12 @@
 
         }
 
-        async function downloadAll() {
-            const zip = new JSZip();
-
-            state.processed.forEach(item => {
-                const name = item.file.name.replace(/\.[^.]+$/, '') + '-clean' + getExtension(item.file.name);
-                zip.file(name, item.result.blob);
-            });
-
-            const content = await zip.generateAsync({ type: 'blob' });
-            const url = URL.createObjectURL(content);
+        function downloadSingleFile(item) {
+            const name = item.file.name.replace(/\.[^.]+$/, '') + '-clean' + getExtension(item.file.name);
+            const url = URL.createObjectURL(item.result.blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'watermark-removed-' + Date.now() + '.zip';
+            a.download = name;
             a.click();
             URL.revokeObjectURL(url);
         }
@@ -1132,9 +1116,6 @@
 
             document.getElementById('totalCount').textContent = state.files.length;
             document.getElementById('processedCount').textContent = state.processed.length;
-
-            processBtn.disabled = state.files.filter(f => f.status === 'pending').length === 0 || state.processing;
-            downloadBtn.disabled = state.processed.length === 0;
 
             gallery.innerHTML = state.files.map(item => `
                 <div class="image-card">
