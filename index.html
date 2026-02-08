@@ -637,6 +637,75 @@
             transform: translateY(-2px);
             box-shadow: 0 8px 25px rgba(139, 90, 43, 0.4);
         }
+
+        /* Instructions Section */
+        .instructions {
+            background: rgba(255,255,255,0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 25px;
+            padding: 30px;
+            margin-bottom: 40px;
+            border: 1px solid rgba(139, 90, 43, 0.2);
+            text-align: center;
+        }
+
+        .instructions h3 {
+            color: #654321;
+            margin-bottom: 25px;
+            font-size: 1.5em;
+        }
+
+        .instructions-steps {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .step {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(139, 90, 43, 0.08);
+            padding: 15px 20px;
+            border-radius: 15px;
+            transition: all 0.3s;
+        }
+
+        .step:hover {
+            background: rgba(139, 90, 43, 0.15);
+            transform: translateY(-2px);
+        }
+
+        .step-number {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(90deg, #8b5a2b, #a0784a);
+            color: #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        .step p {
+            color: #3d3225;
+            margin: 0;
+            text-align: start;
+        }
+
+        .instructions-tip {
+            color: #5a7a3a;
+            font-weight: bold;
+            margin: 0;
+            padding: 15px;
+            background: rgba(90, 122, 58, 0.1);
+            border-radius: 10px;
+            display: inline-block;
+        }
     </style>
 </head>
 <body>
@@ -714,6 +783,26 @@
 
         <div class="gallery" id="gallery"></div>
 
+        <!-- Instructions Section -->
+        <div class="instructions">
+            <h3 data-i18n="howToUseTitle">איך להשתמש?</h3>
+            <div class="instructions-steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <p data-i18n="howToUseStep1">העלו תמונה בודדת או תיקייה שלמה</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <p data-i18n="howToUseStep2">התמונות יעובדו אוטומטית ברגע ההעלאה</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <p data-i18n="howToUseStep3">תמונה בודדת תרד ישירות, תיקייה תרד כקובץ ZIP</p>
+                </div>
+            </div>
+            <p class="instructions-tip" data-i18n="howToUseTip">הכל קורה מקומית במחשב שלכם - אין העלאה לשרת!</p>
+        </div>
+
         <div class="footer">
             <div class="social-links">
                 <a href="https://www.tiktok.com/@elimalka_ai" target="_blank" class="social-link">
@@ -766,6 +855,9 @@
         </div>
     </div>
 
+    <!-- JSZip for folder downloads -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
     <script>
         // ============== I18N ==============
         const translations = {
@@ -791,7 +883,12 @@
                 waiting: 'ממתין...',
                 processing: 'מעבד...',
                 doneIn: 'הושלם ב-',
-                clean: 'נקי'
+                clean: 'נקי',
+                howToUseTitle: 'איך להשתמש?',
+                howToUseStep1: 'העלו תמונה בודדת או תיקייה שלמה',
+                howToUseStep2: 'התמונות יעובדו אוטומטית ברגע ההעלאה',
+                howToUseStep3: 'תמונה בודדת תרד ישירות, תיקייה תרד כקובץ ZIP',
+                howToUseTip: 'הכל קורה מקומית במחשב שלכם - אין העלאה לשרת!'
             },
             en: {
                 title: 'Gemini Watermark Remover',
@@ -815,7 +912,12 @@
                 waiting: 'Waiting...',
                 processing: 'Processing...',
                 doneIn: 'Done in ',
-                clean: 'CLEAN'
+                clean: 'CLEAN',
+                howToUseTitle: 'How to Use?',
+                howToUseStep1: 'Upload a single image or an entire folder',
+                howToUseStep2: 'Images are processed automatically upon upload',
+                howToUseStep3: 'Single image downloads directly, folder downloads as ZIP',
+                howToUseTip: 'Everything happens locally on your computer - no server upload!'
             }
         };
 
@@ -970,7 +1072,9 @@
         const state = {
             files: [],
             processed: [],
-            processing: false
+            processing: false,
+            isFolder: false,
+            currentBatchSize: 0
         };
 
         const dropZone = document.getElementById('dropZone');
@@ -991,31 +1095,38 @@
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
             dropZone.classList.remove('dragover');
-            handleFiles(e.dataTransfer.files);
+            const files = Array.from(e.dataTransfer.files);
+            // If multiple files dropped, treat as folder
+            handleFiles(files, files.length > 1);
         });
 
         // Labels with for="" automatically trigger inputs, just handle the change event
         fileInput.addEventListener('change', (e) => {
             if (e.target.files && e.target.files.length > 0) {
                 const files = Array.from(e.target.files);
-                handleFiles(files);
+                handleFiles(files, false);
             }
             e.target.value = '';
         });
         folderInput.addEventListener('change', (e) => {
             if (e.target.files && e.target.files.length > 0) {
                 const files = Array.from(e.target.files);
-                handleFiles(files);
+                handleFiles(files, true);
             }
             e.target.value = '';
         });
 
         clearBtn.addEventListener('click', clearAll);
 
-        function handleFiles(fileList) {
+        function handleFiles(fileList, isFolder = false) {
             const filesArray = Array.isArray(fileList) ? fileList : Array.from(fileList);
             const newFiles = filesArray.filter(f => f.type.startsWith('image/'));
-            console.log(`[Upload] ${newFiles.length} images added`);
+            console.log(`[Upload] ${newFiles.length} images added (folder: ${isFolder})`);
+
+            // Track batch info
+            state.isFolder = isFolder || newFiles.length > 1;
+            state.currentBatchSize = newFiles.length;
+
             newFiles.forEach(file => {
                 const id = Date.now() + Math.random().toString(36).substr(2, 9);
                 state.files.push({
@@ -1038,11 +1149,13 @@
             state.processing = true;
 
             const pending = state.files.filter(f => f.status === 'pending');
+            const isMultiple = state.isFolder || pending.length > 1;
+            const batchItems = [];
             let times = [];
             let successCount = 0;
             let errorCount = 0;
 
-            console.log(`[Process] Starting to process ${pending.length} images...`);
+            console.log(`[Process] Starting to process ${pending.length} images... (ZIP: ${isMultiple})`);
 
             for (let i = 0; i < pending.length; i++) {
                 const item = pending[i];
@@ -1057,11 +1170,9 @@
                     item.processedPreview = URL.createObjectURL(result.blob);
                     times.push(result.time);
                     state.processed.push(item);
+                    batchItems.push(item);
                     successCount++;
                     console.log(`[Success] ${item.file.name} - ${result.time.toFixed(0)}ms`);
-
-                    // Auto-download immediately
-                    downloadSingleFile(item);
                 } catch (err) {
                     item.status = 'error';
                     item.error = err.message;
@@ -1080,9 +1191,35 @@
                 document.getElementById('avgTime').textContent = avg.toFixed(0) + 'ms';
             }
 
+            // Auto-download: ZIP for multiple files, direct for single
+            if (batchItems.length > 0) {
+                if (isMultiple && batchItems.length > 1) {
+                    await downloadAsZip(batchItems);
+                } else if (batchItems.length === 1) {
+                    downloadSingleFile(batchItems[0]);
+                }
+            }
+
             console.log(`[Done] Processed: ${successCount} success, ${errorCount} errors`);
             console.log(`[Stats] Total processed ever: ${state.processed.length}`);
 
+        }
+
+        async function downloadAsZip(items) {
+            const zip = new JSZip();
+
+            items.forEach(item => {
+                const name = item.file.name.replace(/\.[^.]+$/, '') + '-clean' + getExtension(item.file.name);
+                zip.file(name, item.result.blob);
+            });
+
+            const content = await zip.generateAsync({ type: 'blob' });
+            const url = URL.createObjectURL(content);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'watermark-removed-' + Date.now() + '.zip';
+            a.click();
+            URL.revokeObjectURL(url);
         }
 
         function downloadSingleFile(item) {
