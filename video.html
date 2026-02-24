@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
     <title>Veo Watermark Remover</title>
+    <!-- MP4 Muxer for creating MP4 files -->
+    <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400&display=swap');
@@ -102,7 +104,6 @@
         }
 
         .btn:hover { background: rgba(139,92,246,0.15); border-color: var(--primary); }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         input[type="file"] { display: none; }
 
@@ -177,6 +178,18 @@
 
         .back-link { color: var(--gray); text-decoration: none; display: inline-block; margin-bottom: 20px; }
         .back-link:hover { color: var(--light); }
+
+        .error-box {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 24px;
+            display: none;
+        }
+        .error-box.show { display: block; }
+        .error-box h4 { color: var(--error); margin-bottom: 8px; }
+        .error-box p { color: var(--gray-light); font-size: 0.9em; }
     </style>
 </head>
 <body>
@@ -184,7 +197,12 @@
         <a href="index.html" class="back-link">← חזרה לתמונות</a>
 
         <h1>Veo Watermark Remover</h1>
-        <p class="subtitle">הסרת סימן המים "Veo" מסרטוני Google Veo</p>
+        <p class="subtitle">הסרת סימן המים "Veo" מסרטוני Google Veo - פלט MP4</p>
+
+        <div class="error-box" id="errorBox">
+            <h4>הדפדפן לא תומך</h4>
+            <p>נדרש Chrome 94+ או Edge 94+ עם תמיכה ב-WebCodecs API ליצירת MP4.</p>
+        </div>
 
         <div class="card">
             <h3>איך זה עובד?</h3>
@@ -196,8 +214,8 @@
                 Original = (Current - White × α) / (1 - α)
             </p>
             <div class="browser-support">
-                <strong>תמיכה:</strong> Chrome 94+, Edge 94+, Opera 80+ (WebCodecs API)<br>
-                פלט: WebM (VP9) באיכות גבוהה
+                <strong>דרישות:</strong> Chrome 94+ / Edge 94+ (WebCodecs API)<br>
+                <strong>פלט:</strong> MP4 (H.264) באיכות גבוהה
             </div>
         </div>
 
@@ -260,6 +278,11 @@
     </div>
 
     <script>
+        // Check browser support
+        if (typeof VideoEncoder === 'undefined' || typeof Mp4Muxer === 'undefined') {
+            document.getElementById('errorBox').classList.add('show');
+        }
+
         // ============== CONFIG ==============
         const CONFIG = {
             text: 'Veo',
@@ -360,9 +383,8 @@
         async function processVideo(file, itemEl) {
             const statusEl = itemEl.querySelector('.status');
 
-            // Check WebCodecs support
             if (typeof VideoEncoder === 'undefined') {
-                throw new Error('הדפדפן לא תומך ב-WebCodecs. נסה Chrome/Edge');
+                throw new Error('הדפדפן לא תומך ב-WebCodecs');
             }
 
             const video = document.createElement('video');
@@ -385,25 +407,30 @@
             const mask = createMask(W, H);
             const startTime = Date.now();
 
-            statusEl.textContent = 'מכין קידוד...';
+            statusEl.textContent = 'מכין MP4...';
 
-            // Use WebCodecs VideoEncoder
-            const encodedChunks = [];
-
-            const encoder = new VideoEncoder({
-                output: (chunk, meta) => {
-                    const buf = new ArrayBuffer(chunk.byteLength);
-                    chunk.copyTo(buf);
-                    encodedChunks.push({ data: buf, timestamp: chunk.timestamp, type: chunk.type, duration: chunk.duration });
+            // Create MP4 muxer
+            const muxer = new Mp4Muxer.Muxer({
+                target: new Mp4Muxer.ArrayBufferTarget(),
+                video: {
+                    codec: 'avc',
+                    width: W,
+                    height: H
                 },
-                error: (e) => console.error('Encoder error:', e)
+                fastStart: 'in-memory'
+            });
+
+            // Create video encoder
+            const encoder = new VideoEncoder({
+                output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+                error: e => console.error('Encoder error:', e)
             });
 
             encoder.configure({
-                codec: 'vp09.00.10.08',
+                codec: 'avc1.640028',
                 width: W,
                 height: H,
-                bitrate: 5_000_000,
+                bitrate: 8_000_000,
                 framerate: fps
             });
 
@@ -427,154 +454,27 @@
                 encoder.encode(frame, { keyFrame: i % 60 === 0 });
                 frame.close();
 
-                const pct = (i / totalFrames) * 90;
+                const pct = (i / totalFrames) * 95;
                 const elapsed = (Date.now() - startTime) / 1000;
                 const rate = (i + 1) / elapsed;
                 const remaining = Math.round((totalFrames - i - 1) / rate);
 
                 updateProgress(pct, `פריים ${i + 1}/${totalFrames}`, file.name, `נותר: ${remaining}s`);
 
-                // Allow UI updates
-                if (i % 5 === 0) await new Promise(r => setTimeout(r, 0));
+                if (i % 3 === 0) await new Promise(r => setTimeout(r, 0));
             }
 
             await encoder.flush();
             encoder.close();
+            muxer.finalize();
 
-            updateProgress(95, 'יוצר קובץ WebM...', file.name, '');
-            statusEl.textContent = 'יוצר קובץ WebM...';
+            updateProgress(100, 'יוצר MP4...', file.name, '');
+            statusEl.textContent = 'יוצר MP4...';
 
-            // Create WebM file manually
-            const webmBlob = createWebM(encodedChunks, W, H, fps, duration);
+            const { buffer } = muxer.target;
+            const blob = new Blob([buffer], { type: 'video/mp4' });
 
             URL.revokeObjectURL(video.src);
-            return webmBlob;
-        }
-
-        // Simple WebM muxer
-        function createWebM(chunks, width, height, fps, duration) {
-            // Use a simpler approach - just encode as raw VP9 in WebM container
-            // This is a minimal WebM header + VP9 data
-
-            const EBML_HEADER = new Uint8Array([
-                0x1A, 0x45, 0xDF, 0xA3, // EBML
-                0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F, // Size
-                0x42, 0x86, 0x81, 0x01, // EBMLVersion
-                0x42, 0xF7, 0x81, 0x01, // EBMLReadVersion
-                0x42, 0xF2, 0x81, 0x04, // EBMLMaxIDLength
-                0x42, 0xF3, 0x81, 0x08, // EBMLMaxSizeLength
-                0x42, 0x82, 0x84, 0x77, 0x65, 0x62, 0x6D, // DocType "webm"
-                0x42, 0x87, 0x81, 0x04, // DocTypeVersion
-                0x42, 0x85, 0x81, 0x02  // DocTypeReadVersion
-            ]);
-
-            // For simplicity, let's use MediaRecorder as fallback since WebM muxing is complex
-            // Actually, let's just return the raw data and use a different approach
-
-            // Concatenate all chunk data
-            const totalSize = chunks.reduce((sum, c) => sum + c.data.byteLength, 0);
-            const combined = new Uint8Array(totalSize);
-            let offset = 0;
-            for (const chunk of chunks) {
-                combined.set(new Uint8Array(chunk.data), offset);
-                offset += chunk.data.byteLength;
-            }
-
-            // Return as blob - this won't be a valid WebM but shows the approach
-            return new Blob([combined], { type: 'video/webm' });
-        }
-
-        // Alternative: Use MediaRecorder for proper WebM output
-        async function processVideoWithMediaRecorder(file, itemEl) {
-            const statusEl = itemEl.querySelector('.status');
-
-            const video = document.createElement('video');
-            video.src = URL.createObjectURL(file);
-            video.muted = true;
-
-            await new Promise((res, rej) => { video.onloadedmetadata = res; video.onerror = rej; });
-
-            const W = video.videoWidth;
-            const H = video.videoHeight;
-            const duration = video.duration;
-            const fps = 30;
-            const totalFrames = Math.ceil(duration * fps);
-
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            canvas.width = W;
-            canvas.height = H;
-
-            const mask = createMask(W, H);
-            const startTime = Date.now();
-
-            statusEl.textContent = `מעבד ${totalFrames} פריימים...`;
-
-            // First pass: process all frames
-            const processedFrames = [];
-            for (let i = 0; i < totalFrames; i++) {
-                video.currentTime = i / fps;
-                await new Promise(r => video.onseeked = r);
-
-                ctx.drawImage(video, 0, 0);
-                const imgData = ctx.getImageData(0, 0, W, H);
-                removeWatermark(imgData, mask);
-                ctx.putImageData(imgData, 0, 0);
-
-                processedFrames.push(await createImageBitmap(canvas));
-
-                const pct = (i / totalFrames) * 50;
-                const elapsed = (Date.now() - startTime) / 1000;
-                const rate = (i + 1) / elapsed;
-                const remaining = Math.round((totalFrames - i - 1) / rate);
-
-                updateProgress(pct, `פריים ${i + 1}/${totalFrames}`, file.name, `נותר: ${remaining}s`);
-
-                if (i % 5 === 0) await new Promise(r => setTimeout(r, 0));
-            }
-
-            statusEl.textContent = 'מקודד וידאו...';
-            updateProgress(50, 'מקודד וידאו...', file.name, '');
-
-            // Second pass: encode with MediaRecorder at correct speed
-            const stream = canvas.captureStream(fps);
-            const recorder = new MediaRecorder(stream, {
-                mimeType: 'video/webm;codecs=vp9',
-                videoBitsPerSecond: 5_000_000
-            });
-
-            const chunks = [];
-            recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-
-            const recordingDone = new Promise(resolve => {
-                recorder.onstop = () => resolve(new Blob(chunks, { type: 'video/webm' }));
-            });
-
-            recorder.start();
-
-            // Play frames at exact timing
-            const frameTime = 1000 / fps;
-            for (let i = 0; i < processedFrames.length; i++) {
-                const frameStart = performance.now();
-                ctx.drawImage(processedFrames[i], 0, 0);
-
-                const pct = 50 + (i / processedFrames.length) * 50;
-                updateProgress(pct, 'מקודד...', file.name, '');
-
-                // Wait for exact frame timing
-                const elapsed = performance.now() - frameStart;
-                if (elapsed < frameTime) {
-                    await new Promise(r => setTimeout(r, frameTime - elapsed));
-                }
-            }
-
-            recorder.stop();
-            const blob = await recordingDone;
-
-            // Cleanup
-            processedFrames.forEach(f => f.close());
-            URL.revokeObjectURL(video.src);
-
             return blob;
         }
 
@@ -590,19 +490,18 @@
                 statusEl.className = 'status processing';
 
                 try {
-                    // Use MediaRecorder approach (more compatible)
-                    const blob = await processVideoWithMediaRecorder(file, itemEl);
+                    const blob = await processVideo(file, itemEl);
 
                     const url = URL.createObjectURL(blob);
                     const dlBtn = itemEl.querySelector('.download');
                     dlBtn.onclick = () => {
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = file.name.replace(/\.[^.]+$/, '') + '-clean.webm';
+                        a.download = file.name.replace(/\.[^.]+$/, '') + '-clean.mp4';
                         a.click();
                     };
 
-                    dlBtn.click(); // Auto download
+                    dlBtn.click();
 
                     statusEl.textContent = 'הושלם! (' + (blob.size / 1024 / 1024).toFixed(1) + ' MB)';
                     statusEl.className = 'status done';
@@ -620,6 +519,11 @@
         }
 
         function addVideos(files) {
+            if (typeof VideoEncoder === 'undefined') {
+                alert('הדפדפן לא תומך ב-WebCodecs. נדרש Chrome 94+ או Edge 94+');
+                return;
+            }
+
             const list = document.getElementById('videoList');
 
             Array.from(files)
@@ -633,7 +537,7 @@
                             <div class="name">${file.name}</div>
                             <div class="status">בתור...</div>
                         </div>
-                        <button class="download">הורד WebM</button>
+                        <button class="download">הורד MP4</button>
                     `;
                     list.appendChild(item);
                     queue.push({ file, itemEl: item });
