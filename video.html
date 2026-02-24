@@ -323,15 +323,19 @@
             const text = document.getElementById('statusText');
 
             try {
-                const { FFmpeg } = await import('https://esm.sh/@ffmpeg/ffmpeg@0.12.10');
-                const { fetchFile, toBlobURL } = await import('https://esm.sh/@ffmpeg/util@0.12.1');
+                // Load FFmpeg UMD from CDN
+                const FFmpegModule = await import('https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/+esm');
+                const FFmpegUtil = await import('https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/+esm');
+
+                const { FFmpeg } = FFmpegModule;
+                const { fetchFile, toBlobURL } = FFmpegUtil;
 
                 ffmpeg = new FFmpeg();
                 window.fetchFile = fetchFile;
 
                 ffmpeg.on('log', ({ message }) => console.log('[FFmpeg]', message));
 
-                const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+                const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm';
                 await ffmpeg.load({
                     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
                     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
