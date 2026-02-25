@@ -9,7 +9,6 @@
     <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400&display=swap');
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -56,21 +55,6 @@
             margin-bottom: 24px;
         }
 
-        .card h3 { color: var(--accent); margin-bottom: 12px; font-size: 1.1em; }
-        .card p { color: var(--gray-light); line-height: 1.7; font-size: 0.95em; }
-        .card code { background: rgba(139,92,246,0.2); padding: 2px 8px; border-radius: 4px; color: #c4b5fd; }
-
-        .browser-support {
-            background: rgba(16, 185, 129, 0.1);
-            border: 1px solid rgba(16, 185, 129, 0.2);
-            border-radius: 8px;
-            padding: 12px 16px;
-            margin-top: 16px;
-            font-size: 0.9em;
-        }
-
-        .browser-support strong { color: var(--success); }
-
         .drop-zone {
             border: 2px dashed rgba(139,92,246,0.3);
             border-radius: 16px;
@@ -106,16 +90,6 @@
         .btn:hover { background: rgba(139,92,246,0.15); border-color: var(--primary); }
 
         input[type="file"] { display: none; }
-
-        .settings-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 16px;
-        }
-
-        .setting label { display: block; color: var(--gray); font-size: 0.85em; margin-bottom: 6px; }
-        .setting input[type="range"] { width: 100%; accent-color: var(--primary); }
-        .setting .value { color: var(--primary); font-weight: 600; }
 
         .progress-section { display: none; }
         .progress-section.active { display: block; }
@@ -204,21 +178,6 @@
             <p>נדרש Chrome 94+ או Edge 94+ עם תמיכה ב-WebCodecs API ליצירת MP4.</p>
         </div>
 
-        <div class="card">
-            <h3>איך זה עובד?</h3>
-            <p>
-                סרטוני Veo מגיעים עם טקסט <code>Veo</code> שקוף בפינה הימנית התחתונה.
-                הכלי משתמש ב-<strong>Reverse Alpha Blending</strong> - נוסחה מתמטית שמשחזרת את הפיקסלים המקוריים:
-            </p>
-            <p style="margin-top: 8px; font-family: monospace; color: var(--accent);">
-                Original = (Current - White × α) / (1 - α)
-            </p>
-            <div class="browser-support">
-                <strong>דרישות:</strong> Chrome 94+ / Edge 94+ (WebCodecs API)<br>
-                <strong>פלט:</strong> MP4 (H.264) באיכות גבוהה
-            </div>
-        </div>
-
         <div class="drop-zone" id="dropZone">
             <h2>גרור סרטונים לכאן</h2>
             <p>או לחץ לבחירת קבצים • MP4, WebM, MOV</p>
@@ -233,31 +192,6 @@
                 בחר תיקייה
                 <input type="file" id="folderInput" webkitdirectory multiple accept="video/*">
             </label>
-        </div>
-
-        <div class="card">
-            <h3>הגדרות (מכוילות לפי מדידה)</h3>
-            <div class="settings-grid">
-                <div class="setting">
-                    <label>שקיפות: <span class="value" id="opacityVal">0.52</span></label>
-                    <input type="range" id="opacity" min="0.3" max="0.7" step="0.02" value="0.52">
-                </div>
-                <div class="setting">
-                    <label>גודל גופן: <span class="value" id="fontSizeVal">26</span>px</label>
-                    <input type="range" id="fontSize" min="18" max="40" step="1" value="26">
-                </div>
-                <div class="setting">
-                    <label>מרווח מימין: <span class="value" id="marginRightVal">20</span>px</label>
-                    <input type="range" id="marginRight" min="5" max="60" step="1" value="20">
-                </div>
-                <div class="setting">
-                    <label>מרווח מלמטה: <span class="value" id="marginBottomVal">12</span>px</label>
-                    <input type="range" id="marginBottom" min="5" max="60" step="1" value="12">
-                </div>
-            </div>
-            <p style="margin-top: 12px; font-size: 0.8em; color: var(--gray);">
-                טיפ: אם נשאר צל - הגדל שקיפות. אם נוצר כתם כהה - הקטן.
-            </p>
         </div>
 
         <div class="card progress-section" id="progressSection">
@@ -285,64 +219,113 @@
 
         // ============== CONFIG ==============
         const CONFIG = {
-            text: 'Veo',
-            fontFamily: 'Poppins, Google Sans, Arial, sans-serif',
-            fontSize: 26,
-            opacity: 0.52,
-            marginRight: 20,
-            marginBottom: 12,
-            fontWeight: '400'
+            // Base resolution where bg.png was captured
+            baseWidth: 1280,
+            baseHeight: 720,
+            // Mask image dimensions
+            maskWidth: 60,
+            maskHeight: 30,
+            // Margins at base resolution
+            marginRight: 10,
+            marginBottom: 10,
+            // Alpha settings
+            opacity: 0.52
         };
 
-        // Settings UI
-        ['opacity', 'fontSize', 'marginRight', 'marginBottom'].forEach(key => {
-            const input = document.getElementById(key);
-            const display = document.getElementById(key + 'Val');
-            input.addEventListener('input', () => {
-                CONFIG[key] = parseFloat(input.value);
-                display.textContent = key === 'opacity' ? CONFIG[key].toFixed(2) : CONFIG[key];
-            });
-        });
+        // ============== LOAD MASK IMAGE ==============
+        let baseMask = null;
+        let baseMaskData = null;
 
-        // ============== WATERMARK MASK ==============
-        function createMask(videoWidth, videoHeight) {
-            const scale = Math.min(videoWidth, videoHeight) / 1080;
-            const fontSize = Math.round(CONFIG.fontSize * scale);
-            const marginRight = Math.round(CONFIG.marginRight * scale);
-            const marginBottom = Math.round(CONFIG.marginBottom * scale);
+        async function loadMaskImage() {
+            if (baseMask) return baseMask;
+
+            const img = new Image();
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = () => reject(new Error('Failed to load bg.png'));
+                img.src = 'bg.png';
+            });
 
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
 
-            ctx.font = `${CONFIG.fontWeight} ${fontSize}px ${CONFIG.fontFamily}`;
-            const metrics = ctx.measureText(CONFIG.text);
-            const w = Math.ceil(metrics.width) + 12;
-            const h = Math.ceil(fontSize * 1.3);
-
-            canvas.width = w;
-            canvas.height = h;
-
-            ctx.fillStyle = 'black';
-            ctx.fillRect(0, 0, w, h);
-            ctx.font = `${CONFIG.fontWeight} ${fontSize}px ${CONFIG.fontFamily}`;
-            ctx.fillStyle = 'white';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(CONFIG.text, 6, h / 2);
-
-            const imgData = ctx.getImageData(0, 0, w, h);
-            const mask = new Float32Array(w * h);
+            const imageData = ctx.getImageData(0, 0, img.width, img.height);
+            const data = imageData.data;
+            const mask = new Float32Array(img.width * img.height);
 
             for (let i = 0; i < mask.length; i++) {
-                const brightness = Math.max(imgData.data[i*4], imgData.data[i*4+1], imgData.data[i*4+2]);
-                mask[i] = (brightness / 255) * CONFIG.opacity;
+                const idx = i * 4;
+                const maxChannel = Math.max(data[idx], data[idx + 1], data[idx + 2]);
+                mask[i] = maxChannel / 255.0;
+            }
+
+            baseMask = { mask, w: img.width, h: img.height };
+            console.log(`Loaded Veo mask ${img.width}x${img.height}`);
+            return baseMask;
+        }
+
+        // Load mask on startup
+        loadMaskImage().catch(err => {
+            console.error('Failed to load mask:', err);
+            alert('שגיאה: לא ניתן לטעון את bg.png');
+        });
+
+        // ============== SCALE MASK FOR VIDEO ==============
+        function createScaledMask(videoWidth, videoHeight) {
+            if (!baseMask) throw new Error('Mask not loaded');
+
+            // Calculate scale based on video height relative to base
+            const scale = videoHeight / CONFIG.baseHeight;
+
+            const scaledW = Math.round(CONFIG.maskWidth * scale);
+            const scaledH = Math.round(CONFIG.maskHeight * scale);
+            const marginRight = Math.round(CONFIG.marginRight * scale);
+            const marginBottom = Math.round(CONFIG.marginBottom * scale);
+
+            // Create scaled mask using bilinear interpolation
+            const scaledMask = new Float32Array(scaledW * scaledH);
+
+            for (let y = 0; y < scaledH; y++) {
+                for (let x = 0; x < scaledW; x++) {
+                    // Map to original coordinates
+                    const srcX = (x / scaledW) * baseMask.w;
+                    const srcY = (y / scaledH) * baseMask.h;
+
+                    const x0 = Math.floor(srcX);
+                    const y0 = Math.floor(srcY);
+                    const x1 = Math.min(x0 + 1, baseMask.w - 1);
+                    const y1 = Math.min(y0 + 1, baseMask.h - 1);
+
+                    const dx = srcX - x0;
+                    const dy = srcY - y0;
+
+                    const v00 = baseMask.mask[y0 * baseMask.w + x0];
+                    const v10 = baseMask.mask[y0 * baseMask.w + x1];
+                    const v01 = baseMask.mask[y1 * baseMask.w + x0];
+                    const v11 = baseMask.mask[y1 * baseMask.w + x1];
+
+                    const value = v00 * (1-dx) * (1-dy) + v10 * dx * (1-dy) +
+                                  v01 * (1-dx) * dy + v11 * dx * dy;
+
+                    scaledMask[y * scaledW + x] = value * CONFIG.opacity;
+                }
             }
 
             return {
-                mask, w, h,
-                x: videoWidth - w - marginRight,
-                y: videoHeight - h - marginBottom
+                mask: scaledMask,
+                w: scaledW,
+                h: scaledH,
+                x: videoWidth - scaledW - marginRight,
+                y: videoHeight - scaledH - marginBottom
             };
         }
+
+        const ALPHA_THRESHOLD = 0.002;
+        const MAX_ALPHA = 0.99;
+        const LOGO_VALUE = 255; // White watermark
 
         function removeWatermark(imageData, mask) {
             const d = imageData.data;
@@ -355,15 +338,16 @@
                     if (imgX < 0 || imgX >= imgW || imgY < 0 || imgY >= imageData.height) continue;
 
                     const idx = (imgY * imgW + imgX) * 4;
-                    const alpha = mask.mask[y * mask.w + x];
-                    if (alpha < 0.01) continue;
+                    let alpha = mask.mask[y * mask.w + x];
 
-                    const a = Math.min(alpha, 0.98);
-                    const div = 1 - a;
+                    if (alpha < ALPHA_THRESHOLD) continue;
+                    alpha = Math.min(alpha, MAX_ALPHA);
 
-                    d[idx]   = Math.max(0, Math.min(255, Math.round((d[idx]   - a * 255) / div)));
-                    d[idx+1] = Math.max(0, Math.min(255, Math.round((d[idx+1] - a * 255) / div)));
-                    d[idx+2] = Math.max(0, Math.min(255, Math.round((d[idx+2] - a * 255) / div)));
+                    const divisor = 1 - alpha;
+
+                    d[idx]   = Math.max(0, Math.min(255, Math.round((d[idx]   - alpha * LOGO_VALUE) / divisor)));
+                    d[idx+1] = Math.max(0, Math.min(255, Math.round((d[idx+1] - alpha * LOGO_VALUE) / divisor)));
+                    d[idx+2] = Math.max(0, Math.min(255, Math.round((d[idx+2] - alpha * LOGO_VALUE) / divisor)));
                 }
             }
         }
@@ -387,6 +371,9 @@
                 throw new Error('הדפדפן לא תומך ב-WebCodecs');
             }
 
+            // Ensure mask is loaded
+            await loadMaskImage();
+
             const video = document.createElement('video');
             video.src = URL.createObjectURL(file);
             video.muted = true;
@@ -404,7 +391,7 @@
             canvas.width = W;
             canvas.height = H;
 
-            const mask = createMask(W, H);
+            const mask = createScaledMask(W, H);
             const startTime = Date.now();
 
             statusEl.textContent = 'מכין MP4...';
